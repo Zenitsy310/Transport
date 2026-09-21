@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Мосгортранс — черновик ответа</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ГУП «Мосгортранс» · MVP</p>
+      <h1>Обработка входящих обращений</h1>
+    </div>
+    <div class="meta" id="health">Проверка сервиса…</div>
+  </header>
+
+  <section class="toolbar">
+    <label class="file-btn">
+      Загрузить обращение
+      <input id="file-input" type="file" accept=".pdf,.jpg,.jpeg,.png,.txt,.docx" />
+    </label>
+    <button id="process-btn" disabled>Распознать и подготовить ответ</button>
+    <button id="export-btn" disabled>Скачать DOCX</button>
+    <span id="file-name" class="file-name">Файл не выбран</span>
+  </section>
+
+  <p id="status" class="status" hidden></p>
+
+  <main class="split">
+    <section class="pane">
+      <div class="pane-head">
+        <h2>Исходный документ</h2>
+        <span id="ocr-meta"></span>
+      </div>
+      <div id="preview" class="preview empty">Предпросмотр появится после выбора файла</div>
+      <textarea id="source-text" readonly placeholder="Распознанный текст обращения"></textarea>
+    </section>
+    <section class="pane">
+      <div class="pane-head">
+        <h2>Проект ответа</h2>
+        <span id="gen-meta"></span>
+      </div>
+      <textarea id="answer-text" placeholder="Здесь появится проект официального ответа. Текст можно править."></textarea>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

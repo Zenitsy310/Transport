@@ -1,0 +1,3 @@
+# Optional OCR stack (Component A). Install inside GPU/CPU worker image.
+paddlepaddle==2.6.2
+paddleocr==2.9.1
