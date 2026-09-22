@@ -52,18 +52,25 @@ class DocumentPipeline:
         if not ocr_result.success or not ocr_result.text.strip():
             raise ValueError(ocr_result.error or "Не удалось извлечь текст из файла")
 
-        rag_result = await self._run_rag(ocr_result.text, request_id)
+        source_text = ocr_result.text
+        if len(source_text) > self.settings.source_text_max_chars:
+            source_text = source_text[: self.settings.source_text_max_chars]
+            warnings.append("Текст документа обрезан для отображения из‑за большого объёма.")
+
+        rag_query = source_text[: self.settings.rag_query_max_chars]
+        rag_result = await self._run_rag(rag_query, request_id)
         if rag_result.status != "ok":
             warnings.append("Поиск по базе НПА выполнен в ограниченном режиме либо не дал результатов.")
 
-        llm_result = await self._run_llm(ocr_result.text, rag_result.context_text, request_id)
+        llm_source = source_text[: self.settings.llm_source_max_chars]
+        llm_result = await self._run_llm(llm_source, rag_result.context_text, request_id)
         answer = llm_result.text
         if not llm_result.success:
             warnings.append(
                 "Генерация ответа моделью недоступна. Показан распознанный текст обращения; "
                 f"причина: {llm_result.error or 'неизвестная ошибка'}."
             )
-            answer = _fallback_answer(ocr_result.text, llm_result.error)
+            answer = _fallback_answer(source_text, llm_result.error)
 
         logger.info(
             "pipeline_completed",
@@ -77,7 +84,7 @@ class DocumentPipeline:
         )
         return PipelineResult(
             request_id=request_id,
-            source_text=ocr_result.text,
+            source_text=source_text,
             answer_text=answer,
             ocr_method=ocr_result.method,
             rag_status=rag_result.status,

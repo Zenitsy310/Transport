@@ -20,6 +20,40 @@ function setStatus(text, kind = "") {
   statusEl.className = `status ${kind}`.trim();
 }
 
+function formatDetail(detail) {
+  if (!detail) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || item.detail || JSON.stringify(item)).join("; ");
+  }
+  return String(detail);
+}
+
+async function readApiPayload(response) {
+  const raw = await response.text();
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error("Сервер вернул повреждённый JSON.");
+    }
+  }
+  if (response.status === 413) {
+    throw new Error("Файл слишком большой для загрузки (лимит 20 МБ).");
+  }
+  if (response.status === 502 || response.status === 503) {
+    throw new Error("Сервис обработки недоступен. Проверьте, что backend запущен через docker compose.");
+  }
+  if (response.status === 504) {
+    throw new Error("Превышено время ожидания обработки документа. Попробуйте файл меньшего размера.");
+  }
+  if (!raw.trim() || raw.trim().startsWith("<")) {
+    throw new Error(`Сервер вернул HTML вместо данных (код ${response.status}). Чаще всего это падение backend или ошибка nginx.`);
+  }
+  throw new Error(raw.slice(0, 300) || `Ошибка ${response.status}`);
+}
+
 fileInput.addEventListener("change", () => {
   selectedFile = fileInput.files[0] || null;
   processBtn.disabled = !selectedFile;
@@ -64,9 +98,9 @@ processBtn.addEventListener("click", async () => {
   form.append("file", selectedFile, selectedFile.name);
   try {
     const response = await fetch("/api/v1/process-document", { method: "POST", body: form });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok) {
-      throw new Error(payload.detail || "Ошибка обработки");
+      throw new Error(formatDetail(payload.detail) || "Ошибка обработки");
     }
     requestId = payload.request_id;
     sourceText.value = payload.source_text;
@@ -91,8 +125,8 @@ exportBtn.addEventListener("click", async () => {
       body: JSON.stringify({ answer_text: answerText.value, request_id: requestId }),
     });
     if (!response.ok) {
-      const payload = await response.json();
-      throw new Error(payload.detail || "Не удалось сформировать DOCX");
+      const payload = await readApiPayload(response);
+      throw new Error(formatDetail(payload.detail) || "Не удалось сформировать DOCX");
     }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);

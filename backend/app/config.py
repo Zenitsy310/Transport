@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     rag_timeout_seconds: float = 20.0
 
     max_upload_bytes: int = 20 * 1024 * 1024
-    allowed_extensions: str = ".pdf,.jpg,.jpeg,.png,.txt,.docx"
+    allowed_extensions: str = ".pdf,.jpg,.jpeg,.png,.txt,.docx,.doc"
+    rag_query_max_chars: int = 2500
+    llm_source_max_chars: int = 12000
+    source_text_max_chars: int = 200000
 
     knowledge_base_dir: Path = Path("data/knowledge_base")
     qdrant_url: str = "http://qdrant:6333"

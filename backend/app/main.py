@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.adapters.llm import build_llm_adapter
 from app.adapters.ocr import build_ocr_adapter
@@ -40,6 +41,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(router)
+
+    @application.exception_handler(Exception)
+    async def unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, HTTPException):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера: {exc}"})
+
     return application
 
 

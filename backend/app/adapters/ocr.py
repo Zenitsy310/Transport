@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from app.config import Settings
 
@@ -13,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 MIN_DIGITAL_CHARS = 40
+OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 @dataclass
@@ -36,7 +40,7 @@ class StubOCRAdapter(OCRAdapter):
         suffix = Path(filename).suffix.lower()
         if suffix == ".txt":
             return OCRResult(payload.decode("utf-8", errors="replace"), "txt", True)
-        if suffix == ".docx":
+        if suffix in {".docx", ".doc"}:
             return await asyncio.to_thread(_extract_docx, payload)
         if suffix == ".pdf":
             digital = await asyncio.to_thread(_extract_pdf_digital, payload)
@@ -71,7 +75,7 @@ class PaddleOCRAdapter(OCRAdapter):
         suffix = Path(filename).suffix.lower()
         if suffix == ".txt":
             return OCRResult(payload.decode("utf-8", errors="replace"), "txt", True)
-        if suffix == ".docx":
+        if suffix in {".docx", ".doc"}:
             return await asyncio.to_thread(_extract_docx, payload)
         if suffix == ".pdf":
             digital = await asyncio.to_thread(_extract_pdf_digital, payload)
@@ -129,19 +133,73 @@ class PaddleOCRAdapter(OCRAdapter):
 
 
 def _extract_docx(payload: bytes) -> OCRResult:
+    if payload.startswith(OLE_MAGIC):
+        return OCRResult(
+            "",
+            "doc",
+            False,
+            "Формат Word 97–2003 (.doc) не поддерживается. Сохраните обращение как .docx и загрузите снова.",
+        )
+    try:
+        result = _extract_docx_library(payload)
+        if result.success and result.text.strip():
+            return result
+    except Exception as exc:
+        logger.warning("docx_library_failed", extra={"event": "docx_library_failed", "error": str(exc)})
+    try:
+        text = _extract_docx_xml(payload)
+        if text:
+            return OCRResult(text, "docx-xml", True)
+    except Exception as exc:
+        logger.warning("docx_xml_failed", extra={"event": "docx_xml_failed", "error": str(exc)})
+        return OCRResult("", "docx", False, f"Не удалось прочитать Word-файл: {exc}")
+    return OCRResult("", "docx", False, "Word-файл не содержит извлекаемого текста")
+
+
+def _extract_docx_library(payload: bytes) -> OCRResult:
     from docx import Document
 
     document = Document(io.BytesIO(payload))
-    parts = [p.text for p in document.paragraphs if p.text.strip()]
+    parts: list[str] = []
+    for paragraph in document.paragraphs:
+        if paragraph.text.strip():
+            parts.append(paragraph.text.strip())
     for table in document.tables:
         for row in table.rows:
             cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
             if cells:
                 parts.append(" | ".join(cells))
+    for section in document.sections:
+        for container in (section.header, section.footer):
+            for paragraph in container.paragraphs:
+                if paragraph.text.strip():
+                    parts.append(paragraph.text.strip())
     text = "\n".join(parts).strip()
     if not text:
         return OCRResult("", "docx", False, "DOCX не содержит текста")
     return OCRResult(text, "docx", True)
+
+
+def _extract_docx_xml(payload: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = [
+            name
+            for name in archive.namelist()
+            if name.startswith("word/") and name.endswith(".xml") and not name.endswith(".rels")
+        ]
+        chunks: list[str] = []
+        for name in names:
+            if not name.startswith(("word/document", "word/header", "word/footer", "word/footnotes", "word/endnotes")):
+                continue
+            root = ET.fromstring(archive.read(name))
+            paragraphs: list[str] = []
+            for paragraph in root.iter(f"{W_NS}p"):
+                line = "".join(node.text or "" for node in paragraph.iter(f"{W_NS}t")).strip()
+                if line:
+                    paragraphs.append(line)
+            if paragraphs:
+                chunks.append("\n".join(paragraphs))
+    return "\n".join(chunk.strip() for chunk in chunks if chunk.strip()).strip()
 
 
 def _extract_pdf_digital(payload: bytes) -> OCRResult:

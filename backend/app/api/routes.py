@@ -52,6 +52,8 @@ async def process_document(
         result = await pipeline.process(payload, filename)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ошибка обработки документа: {exc}") from exc
     return ProcessDocumentResponse(
         request_id=result.request_id,
         source_text=result.source_text,
